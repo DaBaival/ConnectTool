@@ -1,4 +1,5 @@
 #include "steam_networking_manager.h"
+#include "steam_vpn_bridge.h"
 #include <iostream>
 #include <algorithm>
 
@@ -14,9 +15,9 @@ void SteamNetworkingManager::OnSteamNetConnectionStatusChanged(SteamNetConnectio
 }
 
 SteamNetworkingManager::SteamNetworkingManager()
-    : m_pInterface(nullptr), hListenSock(k_HSteamListenSocket_Invalid), g_isHost(false), g_isClient(false), g_isConnected(false),
+    : m_pInterface(nullptr), hListenSock(k_HSteamListenSocket_Invalid), g_isConnected(false),
       g_hConnection(k_HSteamNetConnection_Invalid),
-      io_context_(nullptr), server_(nullptr), localPort_(nullptr), messageHandler_(nullptr), vpnBridge_(nullptr), hostPing_(0)
+      messageHandler_(nullptr), vpnBridge_(nullptr), hostPing_(0)
 {
 }
 
@@ -88,6 +89,9 @@ bool SteamNetworkingManager::initialize()
     SteamNetworkingUtils()->SetGlobalCallback_SteamNetConnectionStatusChanged(OnSteamNetConnectionStatusChanged);
 
     m_pInterface = SteamNetworkingSockets();
+
+    // Initialize message handler
+    messageHandler_ = new SteamMessageHandler(m_pInterface, connections, connectionsMutex);
 
     // Check if callbacks are registered
     std::cout << "Steam Networking Manager initialized successfully" << std::endl;

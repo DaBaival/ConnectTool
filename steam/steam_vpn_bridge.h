@@ -41,10 +41,12 @@ enum class VpnMessageType : uint8_t {
 /**
  * @brief VPN消息头
  */
+#pragma pack(push, 1)
 struct VpnMessageHeader {
     VpnMessageType type;    // 消息类型
     uint16_t length;        // 数据长度
-} __attribute__((packed));
+};
+#pragma pack(pop)
 
 /**
  * @brief Steam VPN桥接器

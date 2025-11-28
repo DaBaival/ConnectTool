@@ -1,6 +1,7 @@
 #include "steam_room_manager.h"
 #include "steam_networking_manager.h"
 #include <iostream>
+#include <string>
 #include <algorithm>
 
 SteamFriendsCallbacks::SteamFriendsCallbacks(SteamNetworkingManager *manager, SteamRoomManager *roomManager) 

@@ -62,3 +62,9 @@ ehthumbs.db
 
 # Steamworks
 steamworks/
+
+# vcpkg
+vcpkg_installed/
+
+# thirdparty
+third_party/

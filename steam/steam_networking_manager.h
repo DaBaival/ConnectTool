@@ -76,7 +76,7 @@ private:
     // Connections
     std::vector<HSteamNetConnection> connections;
     std::map<CSteamID, HSteamNetConnection> peerConnections_;  // SteamID -> Connection mapping
-    std::mutex connectionsMutex;
+    mutable std::mutex connectionsMutex;
     int hostPing_;  // Ping to host (for clients) or average ping (for host)
 
     // Connection config

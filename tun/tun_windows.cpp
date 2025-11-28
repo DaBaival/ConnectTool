@@ -11,6 +11,7 @@
 #include <sstream>
 #include <codecvt>
 #include <locale>
+#include <objbase.h>
 
 #pragma comment(lib, "iphlpapi.lib")
 #pragma comment(lib, "ws2_32.lib")

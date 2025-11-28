@@ -4,218 +4,56 @@
 #include <imgui_impl_opengl3.h>
 #include <iostream>
 #include <vector>
-#include <string>
 #include <thread>
-#include <mutex>
-#include <map>
+#include <chrono>
+#include <string>
 #include <algorithm>
-#include <cstring>
-#include <boost/asio.hpp>
-#include <memory>
-#include <fstream>
-#include <filesystem>
+#include <cctype>
+#include <windows.h>
+
 #include "steam/steam_networking_manager.h"
 #include "steam/steam_room_manager.h"
 #include "steam/steam_utils.h"
 #include "steam/steam_vpn_bridge.h"
 
-#ifdef _WIN32
-#include <windows.h>
-#define GLFW_EXPOSE_NATIVE_WIN32
-#include <GLFW/glfw3native.h>
-#else
-#include <sys/file.h>
-#include <unistd.h>
-#include <signal.h>
-#endif
+HANDLE hMutex;
 
-using boost::asio::ip::tcp;
-
-// New variables for multiple connections
-std::vector<HSteamNetConnection> connections;
-std::mutex connectionsMutex; // Add mutex for connections
-
-#ifdef _WIN32
-// Windows implementation using mutex and shared memory
-HANDLE g_hMutex = nullptr;
-HANDLE g_hMapFile = nullptr;
-HWND* g_pSharedHwnd = nullptr;
-
-bool checkSingleInstance()
-{
-    g_hMutex = CreateMutexW(nullptr, FALSE, L"Global\\OnlineGameTool_SingleInstance_Mutex");
-    if (GetLastError() == ERROR_ALREADY_EXISTS)
-    {
-        // Another instance exists, try to find and activate it
-        g_hMapFile = OpenFileMappingW(FILE_MAP_READ, FALSE, L"Global\\OnlineGameTool_HWND_Share");
-        if (g_hMapFile != nullptr)
-        {
-            HWND* pHwnd = (HWND*)MapViewOfFile(g_hMapFile, FILE_MAP_READ, 0, 0, sizeof(HWND));
-            if (pHwnd != nullptr && *pHwnd != nullptr && IsWindow(*pHwnd))
-            {
-                // Restore and bring to front
-                if (IsIconic(*pHwnd))
-                {
-                    ShowWindow(*pHwnd, SW_RESTORE);
-                }
-                SetForegroundWindow(*pHwnd);
-                UnmapViewOfFile(pHwnd);
-            }
-            CloseHandle(g_hMapFile);
-        }
-        if (g_hMutex)
-        {
-            CloseHandle(g_hMutex);
-        }
+bool checkSingleInstance() {
+    hMutex = CreateMutexA(NULL, TRUE, "Global\\ConnectToolMutex");
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
         return false;
-    }
-
-    // Create shared memory for HWND
-    g_hMapFile = CreateFileMappingW(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE, 0, sizeof(HWND), L"Global\\OnlineGameTool_HWND_Share");
-    if (g_hMapFile != nullptr)
-    {
-        g_pSharedHwnd = (HWND*)MapViewOfFile(g_hMapFile, FILE_MAP_ALL_ACCESS, 0, 0, sizeof(HWND));
     }
     return true;
 }
 
-void storeWindowHandle(GLFWwindow* window)
-{
-    if (g_pSharedHwnd != nullptr)
-    {
-        *g_pSharedHwnd = glfwGetWin32Window(window);
+void cleanupSingleInstance() {
+    if (hMutex) {
+        ReleaseMutex(hMutex);
+        CloseHandle(hMutex);
     }
 }
 
-void cleanupSingleInstance()
-{
-    if (g_pSharedHwnd != nullptr)
-    {
-        UnmapViewOfFile(g_pSharedHwnd);
-        g_pSharedHwnd = nullptr;
-    }
-    if (g_hMapFile != nullptr)
-    {
-        CloseHandle(g_hMapFile);
-        g_hMapFile = nullptr;
-    }
-    if (g_hMutex != nullptr)
-    {
-        CloseHandle(g_hMutex);
-        g_hMutex = nullptr;
-    }
+void storeWindowHandle(GLFWwindow* window) {
+    // Placeholder
 }
-
-#else
-// Unix/Linux/macOS implementation using file lock and signal
-int g_lockfd = -1;
-std::string g_lockFilePath;
-
-void signalHandler(int signum)
-{
-    // Signal received to bring window to front
-    std::cout << "Received signal to activate window" << std::endl;
-}
-
-bool checkSingleInstance()
-{
-    std::string tempDir;
-#ifdef __APPLE__
-    const char* tmpdir = getenv("TMPDIR");
-    tempDir = tmpdir ? tmpdir : "/tmp";
-#else
-    tempDir = "/tmp";
-#endif
-    
-    g_lockFilePath = tempDir + "/OnlineGameTool.lock";
-    
-    g_lockfd = open(g_lockFilePath.c_str(), O_CREAT | O_RDWR, 0666);
-    if (g_lockfd < 0)
-    {
-        std::cerr << "Failed to open lock file" << std::endl;
-        return false;
-    }
-
-    // Try to acquire exclusive lock
-    if (flock(g_lockfd, LOCK_EX | LOCK_NB) != 0)
-    {
-        // Lock failed, another instance is running
-        // Read PID and send signal
-        char pidBuf[32];
-        ssize_t bytesRead = read(g_lockfd, pidBuf, sizeof(pidBuf) - 1);
-        if (bytesRead > 0)
-        {
-            pidBuf[bytesRead] = '\0';
-            pid_t existingPid = atoi(pidBuf);
-            if (existingPid > 0)
-            {
-                // Send SIGUSR1 to existing instance
-                kill(existingPid, SIGUSR1);
-            }
-        }
-        close(g_lockfd);
-        g_lockfd = -1;
-        return false;
-    }
-
-    // Write our PID to the lock file
-    ftruncate(g_lockfd, 0);
-    pid_t myPid = getpid();
-    std::string pidStr = std::to_string(myPid);
-    write(g_lockfd, pidStr.c_str(), pidStr.length());
-
-    // Set up signal handler
-    signal(SIGUSR1, signalHandler);
-
-    return true;
-}
-
-void storeWindowHandle(GLFWwindow* window)
-{
-    // GLFW doesn't provide a standard way to bring window to front on Unix
-    // but we can request attention
-    glfwRequestWindowAttention(window);
-}
-
-void cleanupSingleInstance()
-{
-    if (g_lockfd >= 0)
-    {
-        flock(g_lockfd, LOCK_UN);
-        close(g_lockfd);
-        g_lockfd = -1;
-        unlink(g_lockFilePath.c_str());
-    }
-}
-#endif
 
 int main()
 {
-    // Check for single instance
-    if (!checkSingleInstance())
-    {
-        std::cout << "另一个实例已在运行，正在激活该窗口..." << std::endl;
+    if (!checkSingleInstance()) {
         return 0;
     }
 
-    // Initialize Steam API first
     if (!SteamAPI_Init())
     {
-        std::cerr << "Failed to initialize Steam API" << std::endl;
+        std::cerr << "SteamAPI_Init() failed. Please make sure Steam is running." << std::endl;
         return 1;
     }
-
-    boost::asio::io_context io_context;
-    auto work_guard = boost::asio::make_work_guard(io_context);
-    std::thread io_thread([&io_context]()
-                          { io_context.run(); });
 
     // Initialize Steam Networking Manager
     SteamNetworkingManager steamManager;
     if (!steamManager.initialize())
     {
         std::cerr << "Failed to initialize Steam Networking Manager" << std::endl;
-        SteamAPI_Shutdown();
         return 1;
     }
 
@@ -268,6 +106,7 @@ int main()
 
     // Steam Networking variables
     char filterBuffer[256] = "";
+    char roomIdBuffer[64] = "";
     
     // VPN variables
     bool vpnEnabled = false;
@@ -359,25 +198,82 @@ int main()
         ImGui::Begin("在线游戏工具");
         ImGui::Separator();
 
-        if (!steamManager.isConnected())
+        if (!roomManager.getCurrentLobby().IsValid())
         {
             if (ImGui::Button("创建房间"))
             {
                 roomManager.createLobby();
             }
+
+            ImGui::Separator();
+            ImGui::Text("或者输入房间号加入:");
+            ImGui::InputText("房间号", roomIdBuffer, IM_ARRAYSIZE(roomIdBuffer), ImGuiInputTextFlags_CharsDecimal);
             ImGui::SameLine();
-            if (ImGui::Button("加入好友房间"))
+            if (ImGui::Button("加入"))
             {
-                // 通过Steam好友列表邀请来加入
-                ImGui::OpenPopup("选择好友房间");
+                std::string roomIdStr(roomIdBuffer);
+                if (!roomIdStr.empty())
+                {
+                    try
+                    {
+                        unsigned long long roomId = std::stoull(roomIdStr);
+                        CSteamID lobbyID(roomId);
+                        if (lobbyID.IsValid() && lobbyID.IsLobby())
+                        {
+                            roomManager.joinLobby(lobbyID);
+                            std::cout << "Joining lobby: " << roomId << std::endl;
+                        }
+                        else
+                        {
+                            std::cerr << "Invalid Lobby ID: " << roomId << std::endl;
+                        }
+                    }
+                    catch (const std::exception &e)
+                    {
+                        std::cerr << "Invalid room ID format: " << e.what() << std::endl;
+                    }
+                }
             }
         }
         else
         {
             ImGui::Text("已连接到房间。邀请朋友!");
+
             ImGui::Separator();
             
-            // VPN Control Section
+            if (ImGui::Button("断开连接"))
+            {
+                // Stop VPN if running
+                if (vpnEnabled)
+                {
+                    vpnBridge.stop();
+                    vpnEnabled = false;
+                }
+                
+                roomManager.leaveLobby();
+                steamManager.disconnect();
+            }
+            ImGui::Separator();
+            renderInviteFriends();
+        }
+
+        ImGui::End();
+
+        // Room status window - only show when connected
+        if (roomManager.getCurrentLobby().IsValid())
+        {
+            ImGui::Begin("房间状态");
+            CSteamID lobbyID = roomManager.getCurrentLobby();
+            std::string lobbyIDStr = std::to_string(lobbyID.ConvertToUint64());
+            ImGui::Text("房间号: %s", lobbyIDStr.c_str());
+            ImGui::SameLine();
+            if (ImGui::Button("复制"))
+            {
+                ImGui::SetClipboardText(lobbyIDStr.c_str());
+            }
+            ImGui::Separator();
+
+             // VPN Control Section
             ImGui::Text("Steam VPN:");
             if (!vpnEnabled)
             {
@@ -416,30 +312,9 @@ int main()
                     std::cout << "VPN stopped" << std::endl;
                 }
             }
-            ImGui::Separator();
-            
-            if (ImGui::Button("断开连接"))
-            {
-                // Stop VPN if running
-                if (vpnEnabled)
-                {
-                    vpnBridge.stop();
-                    vpnEnabled = false;
-                }
-                
-                roomManager.leaveLobby();
-                steamManager.disconnect();
-            }
-            ImGui::Separator();
-            renderInviteFriends();
-        }
 
-        ImGui::End();
+            ImGui::Separator();
 
-        // Room status window - only show when connected
-        if (steamManager.isConnected() && roomManager.getCurrentLobby().IsValid())
-        {
-            ImGui::Begin("房间状态");
             ImGui::Text("用户列表:");
             if (ImGui::BeginTable("UserTable", 3, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg))
             {
@@ -539,15 +414,6 @@ int main()
 
     // Stop message handler
     steamManager.stopMessageHandler();
-
-    // Cleanup
-    // Stop io_context and join thread
-    work_guard.reset();
-    io_context.stop();
-    if (io_thread.joinable())
-    {
-        io_thread.join();
-    }
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
