@@ -9,6 +9,7 @@
 #include <netioapi.h>
 #include <cstring>
 #include <sstream>
+#include <iostream>
 #include <codecvt>
 #include <locale>
 #include <objbase.h>
@@ -31,6 +32,7 @@ TunWindows::TunWindows()
     , WintunCreateAdapter_(nullptr)
     , WintunOpenAdapter_(nullptr)
     , WintunCloseAdapter_(nullptr)
+    , WintunDeleteAdapter_(nullptr)
     , WintunStartSession_(nullptr)
     , WintunEndSession_(nullptr)
     , WintunGetReadWaitEvent_(nullptr)
@@ -39,8 +41,7 @@ TunWindows::TunWindows()
     , WintunAllocateSendPacket_(nullptr)
     , WintunSendPacket_(nullptr)
     , WintunGetAdapterLUID_(nullptr) {
-    // 生成随机 GUID
-    CoCreateGuid(&adapter_guid_);
+    memset(&adapter_guid_, 0, sizeof(adapter_guid_));
 }
 
 TunWindows::~TunWindows() {
@@ -77,12 +78,17 @@ bool TunWindows::load_wintun_dll() {
     };
     
     for (const char* path : dll_paths) {
+        std::cout << "TunWindows: Attempting to load wintun.dll from " << path << std::endl;
         wintun_dll_ = LoadLibraryA(path);
-        if (wintun_dll_) break;
+        if (wintun_dll_) {
+            std::cout << "TunWindows: Successfully loaded wintun.dll from " << path << std::endl;
+            break;
+        }
     }
     
     if (!wintun_dll_) {
         last_error_ = "Failed to load wintun.dll. Please ensure Wintun is installed.";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
     
@@ -90,6 +96,7 @@ bool TunWindows::load_wintun_dll() {
     WintunCreateAdapter_ = (WintunCreateAdapterFunc)GetProcAddress(wintun_dll_, "WintunCreateAdapter");
     WintunOpenAdapter_ = (WintunOpenAdapterFunc)GetProcAddress(wintun_dll_, "WintunOpenAdapter");
     WintunCloseAdapter_ = (WintunCloseAdapterFunc)GetProcAddress(wintun_dll_, "WintunCloseAdapter");
+    WintunDeleteAdapter_ = (WintunDeleteAdapterFunc)GetProcAddress(wintun_dll_, "WintunDeleteAdapter");
     WintunStartSession_ = (WintunStartSessionFunc)GetProcAddress(wintun_dll_, "WintunStartSession");
     WintunEndSession_ = (WintunEndSessionFunc)GetProcAddress(wintun_dll_, "WintunEndSession");
     WintunGetReadWaitEvent_ = (WintunGetReadWaitEventFunc)GetProcAddress(wintun_dll_, "WintunGetReadWaitEvent");
@@ -104,6 +111,7 @@ bool TunWindows::load_wintun_dll() {
         !WintunReleaseReceivePacket_ || !WintunAllocateSendPacket_ || !WintunSendPacket_ ||
         !WintunGetAdapterLUID_) {
         last_error_ = "Failed to load Wintun API functions";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         unload_wintun_dll();
         return false;
     }
@@ -120,6 +128,7 @@ void TunWindows::unload_wintun_dll() {
     WintunCreateAdapter_ = nullptr;
     WintunOpenAdapter_ = nullptr;
     WintunCloseAdapter_ = nullptr;
+    WintunDeleteAdapter_ = nullptr;
     WintunStartSession_ = nullptr;
     WintunEndSession_ = nullptr;
     WintunGetReadWaitEvent_ = nullptr;
@@ -133,6 +142,7 @@ void TunWindows::unload_wintun_dll() {
 bool TunWindows::open(const std::string& device_name, uint32_t mtu) {
     if (is_open()) {
         last_error_ = "TUN device already open";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
 
@@ -144,23 +154,43 @@ bool TunWindows::open(const std::string& device_name, uint32_t mtu) {
     std::string actual_name = device_name.empty() ? "WintunTunnel" : device_name;
     std::wstring wide_name = string_to_wstring(actual_name);
     std::wstring tunnel_type = L"ConnectTool";
+
+    // 生成确定性 GUID (基于名称的哈希)
+    // 这样可以确保每次运行都使用相同的 GUID，避免创建多个适配器
+    uint64_t h1 = 0xcbf29ce484222325ULL;
+    uint64_t h2 = 0x100000001b3ULL;
+    for (char c : actual_name) {
+        h1 ^= c;
+        h1 *= 0x100000001b3ULL;
+        h2 ^= c;
+        h2 *= 0xcbf29ce484222325ULL;
+    }
+    memcpy(&adapter_guid_, &h1, 8);
+    memcpy(((uint8_t*)&adapter_guid_) + 8, &h2, 8);
     
     // 尝试打开已存在的适配器，如果不存在则创建新的
+    std::cout << "TunWindows: Opening adapter " << actual_name << std::endl;
     adapter_ = WintunOpenAdapter_(wide_name.c_str());
     if (!adapter_) {
         // 创建新的适配器
+        std::cout << "TunWindows: Adapter not found, creating new one..." << std::endl;
         adapter_ = WintunCreateAdapter_(wide_name.c_str(), tunnel_type.c_str(), &adapter_guid_);
         if (!adapter_) {
             last_error_ = "Failed to create Wintun adapter: " + get_windows_error(GetLastError());
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             unload_wintun_dll();
             return false;
         }
     }
     
+    std::cout << "TunWindows: Adapter handle obtained: " << adapter_ << std::endl;
+
     // 启动会话（使用 1MB 环形缓冲区）
+    std::cout << "TunWindows: Starting session..." << std::endl;
     session_ = WintunStartSession_(adapter_, WINTUN_MIN_RING_CAPACITY * 4);
     if (!session_) {
         last_error_ = "Failed to start Wintun session: " + get_windows_error(GetLastError());
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         WintunCloseAdapter_(adapter_);
         adapter_ = nullptr;
         unload_wintun_dll();
@@ -171,6 +201,7 @@ bool TunWindows::open(const std::string& device_name, uint32_t mtu) {
     read_event_ = WintunGetReadWaitEvent_(session_);
     if (!read_event_) {
         last_error_ = "Failed to get read wait event";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         WintunEndSession_(session_);
         WintunCloseAdapter_(adapter_);
         session_ = nullptr;
@@ -192,7 +223,24 @@ void TunWindows::close() {
     }
     
     if (adapter_) {
-        WintunCloseAdapter_(adapter_);
+        bool deleted = false;
+        // 如果有 DeleteAdapter 函数，尝试删除适配器
+        if (WintunDeleteAdapter_) {
+             BOOL rebootRequired = FALSE;
+             // 删除适配器。这也会关闭适配器句柄。
+             std::cout << "TunWindows: Deleting adapter..." << std::endl;
+             if (WintunDeleteAdapter_(adapter_, FALSE, &rebootRequired)) {
+                 std::cout << "TunWindows: Adapter deleted successfully." << std::endl;
+                 deleted = true;
+             } else {
+                 std::cerr << "TunWindows: Failed to delete adapter." << std::endl;
+             }
+        }
+        
+        // 如果删除失败（或者没有 Delete 函数），则常规关闭
+        if (!deleted) {
+            WintunCloseAdapter_(adapter_);
+        }
         adapter_ = nullptr;
     }
     
@@ -213,11 +261,13 @@ std::string TunWindows::get_device_name() const {
 bool TunWindows::set_ip(const std::string& ip_address, const std::string& netmask) {
     if (!is_open()) {
         last_error_ = "TUN device not open";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
 
     // 获取适配器的 LUID
     NET_LUID luid;
+    std::cout << "TunWindows: Setting IP " << ip_address << " mask " << netmask << std::endl;
     WintunGetAdapterLUID_(adapter_, &luid);
     
     // 解析 IP 地址和子网掩码
@@ -225,6 +275,7 @@ bool TunWindows::set_ip(const std::string& ip_address, const std::string& netmas
     addr_inet.Ipv4.sin_family = AF_INET;
     if (inet_pton(AF_INET, ip_address.c_str(), &addr_inet.Ipv4.sin_addr) != 1) {
         last_error_ = "Invalid IP address format";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
     
@@ -232,6 +283,7 @@ bool TunWindows::set_ip(const std::string& ip_address, const std::string& netmas
     mask_inet.Ipv4.sin_family = AF_INET;
     if (inet_pton(AF_INET, netmask.c_str(), &mask_inet.Ipv4.sin_addr) != 1) {
         last_error_ = "Invalid netmask format";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
     
@@ -254,6 +306,7 @@ bool TunWindows::set_ip(const std::string& ip_address, const std::string& netmas
     DWORD result = CreateUnicastIpAddressEntry(&row);
     if (result != NO_ERROR && result != ERROR_OBJECT_ALREADY_EXISTS) {
         last_error_ = "Failed to set IP address: " + get_windows_error(result);
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
     
@@ -270,10 +323,12 @@ bool TunWindows::set_ip(const std::string& ip_address, const std::string& netmas
         result = SetIpInterfaceEntry(&if_row);
         if (result != NO_ERROR) {
             last_error_ = "Warning: Failed to set MTU: " + get_windows_error(result);
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             // 不返回失败，MTU 设置失败不是致命错误
         }
     }
     
+    std::cout << "TunWindows: IP and MTU configured successfully." << std::endl;
     return true;
 }
 
@@ -290,6 +345,7 @@ bool TunWindows::set_up() {
 int TunWindows::read(uint8_t* buffer, size_t max_length) {
     if (!is_open()) {
         last_error_ = "TUN device not open";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return -1;
     }
 
@@ -300,6 +356,7 @@ int TunWindows::read(uint8_t* buffer, size_t max_length) {
             return 0;  // 没有数据
         } else if (wait_result != WAIT_OBJECT_0) {
             last_error_ = "Wait for read event failed";
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         }
     }
@@ -307,6 +364,10 @@ int TunWindows::read(uint8_t* buffer, size_t max_length) {
     // 接收数据包
     DWORD packet_size = 0;
     BYTE* packet = WintunReceivePacket_(session_, &packet_size);
+    
+    if (packet) {
+        // std::cout << "TunWindows: Received packet of size " << packet_size << std::endl;
+    }
     
     if (!packet) {
         DWORD error = GetLastError();
@@ -320,12 +381,15 @@ int TunWindows::read(uint8_t* buffer, size_t max_length) {
             return 0;  // 重试
         } else if (error == ERROR_HANDLE_EOF) {
             last_error_ = "Wintun adapter is terminating";
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         } else if (error == ERROR_INVALID_DATA) {
             last_error_ = "Wintun buffer is corrupt";
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         } else {
             last_error_ = "Receive packet failed: " + get_windows_error(error);
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         }
     }
@@ -333,6 +397,7 @@ int TunWindows::read(uint8_t* buffer, size_t max_length) {
     // 检查缓冲区大小
     if (packet_size > max_length) {
         last_error_ = "Buffer too small for packet";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         WintunReleaseReceivePacket_(session_, packet);
         return -1;
     }
@@ -349,11 +414,13 @@ int TunWindows::read(uint8_t* buffer, size_t max_length) {
 int TunWindows::write(const uint8_t* buffer, size_t length) {
     if (!is_open()) {
         last_error_ = "TUN device not open";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return -1;
     }
 
     if (length > 0xFFFF) {  // WINTUN_MAX_IP_PACKET_SIZE
         last_error_ = "Packet too large";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return -1;
     }
     
@@ -369,9 +436,11 @@ int TunWindows::write(const uint8_t* buffer, size_t length) {
             return -1;
         } else if (error == ERROR_HANDLE_EOF) {
             last_error_ = "Wintun adapter is terminating";
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         } else {
             last_error_ = "Allocate send packet failed: " + get_windows_error(error);
+            std::cerr << "TunWindows Error: " << last_error_ << std::endl;
             return -1;
         }
     }
@@ -380,6 +449,7 @@ int TunWindows::write(const uint8_t* buffer, size_t length) {
     memcpy(packet, buffer, length);
     
     // 发送数据包
+    // std::cout << "TunWindows: Sending packet of size " << length << std::endl;
     WintunSendPacket_(session_, packet);
     
     return static_cast<int>(length);
@@ -396,6 +466,7 @@ uint32_t TunWindows::get_mtu() const {
 bool TunWindows::set_non_blocking(bool non_blocking) {
     if (!is_open()) {
         last_error_ = "TUN device not open";
+        std::cerr << "TunWindows Error: " << last_error_ << std::endl;
         return false;
     }
 

@@ -56,7 +56,7 @@ bool SteamNetworkingManager::initialize()
 
     // 1. 允许 P2P (ICE) 直连
     // 默认情况下 Steam 可能会保守地只允许 LAN，这里设置为 "All" 允许公网 P2P
-    int32 nIceEnable = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Public | k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Private;
+    int32 nIceEnable = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Public;
     SteamNetworkingUtils()->SetConfigValue(
         k_ESteamNetworkingConfig_P2P_Transport_ICE_Enable,
         k_ESteamNetworkingConfig_Global, // <--- 关键：作用域选 Global

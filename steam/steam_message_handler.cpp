@@ -57,6 +57,7 @@ void SteamMessageHandler::pollLoop() {
                     if (manager_) {
                         SteamVpnBridge* bridge = manager_->getVpnBridge();
                         if (bridge) {
+                            std::cout << "SteamMessageHandler: Received VPN message, forwarding to bridge." << std::endl;
                             bridge->handleVpnMessage(data, size, conn);
                         }
                     }

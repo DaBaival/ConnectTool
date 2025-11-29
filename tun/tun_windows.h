@@ -54,6 +54,7 @@ private:
     typedef WINTUN_ADAPTER_HANDLE (WINAPI *WintunCreateAdapterFunc)(LPCWSTR, LPCWSTR, const GUID*);
     typedef WINTUN_ADAPTER_HANDLE (WINAPI *WintunOpenAdapterFunc)(LPCWSTR);
     typedef VOID (WINAPI *WintunCloseAdapterFunc)(WINTUN_ADAPTER_HANDLE);
+    typedef BOOL (WINAPI *WintunDeleteAdapterFunc)(WINTUN_ADAPTER_HANDLE, BOOL, BOOL*);
     typedef WINTUN_SESSION_HANDLE (WINAPI *WintunStartSessionFunc)(WINTUN_ADAPTER_HANDLE, DWORD);
     typedef VOID (WINAPI *WintunEndSessionFunc)(WINTUN_SESSION_HANDLE);
     typedef HANDLE (WINAPI *WintunGetReadWaitEventFunc)(WINTUN_SESSION_HANDLE);
@@ -66,6 +67,7 @@ private:
     WintunCreateAdapterFunc WintunCreateAdapter_;
     WintunOpenAdapterFunc WintunOpenAdapter_;
     WintunCloseAdapterFunc WintunCloseAdapter_;
+    WintunDeleteAdapterFunc WintunDeleteAdapter_;
     WintunStartSessionFunc WintunStartSession_;
     WintunEndSessionFunc WintunEndSession_;
     WintunGetReadWaitEventFunc WintunGetReadWaitEvent_;
