@@ -4,6 +4,7 @@
 #include <thread>
 #include <chrono>
 #include <mutex>
+#include <cstdio>
 
 #include <grpcpp/grpcpp.h>
 
@@ -172,7 +173,20 @@ int main(int argc, char** argv) {
         return 1;
     }
 
-    std::string server_address("0.0.0.0:50051");
+    // Define server address based on platform
+#ifdef _WIN32
+    // On Windows, use a local file for UDS. 
+    // Note: Windows 10 Build 17134 (April 2018 Update) or later is required for AF_UNIX.
+    std::string socket_path = "connect_tool.sock";
+#else
+    // On Unix/Linux, use /tmp
+    std::string socket_path = "/tmp/connect_tool.sock";
+#endif
+
+    // Remove the socket file if it already exists to avoid "Address already in use"
+    std::remove(socket_path.c_str());
+
+    std::string server_address("unix:" + socket_path);
     ConnectToolServiceImpl service(&core);
 
     ServerBuilder builder;

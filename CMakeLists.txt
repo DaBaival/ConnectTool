@@ -70,8 +70,8 @@ endfunction()
 
 generate_grpc_proto(${PROTO_SRC_DIR}/connect_tool.proto)
 
-# ConnectToolServer Executable
-add_executable(ConnectToolServer
+# ConnectToolCore Executable
+add_executable(ConnectToolCore
     server_main.cpp
     core/connect_tool_core.cpp
     steam/steam_message_handler.cpp 
@@ -84,9 +84,19 @@ add_executable(ConnectToolServer
     ${GENERATED_PROTO_HDRS}
 )
 
-target_include_directories(ConnectToolServer PRIVATE ${PROTO_BINARY_DIR} ${CMAKE_BINARY_DIR})
+target_include_directories(ConnectToolCore PRIVATE ${PROTO_BINARY_DIR} ${CMAKE_BINARY_DIR})
 
-target_link_libraries(ConnectToolServer PRIVATE 
+target_link_libraries(ConnectToolCore PRIVATE 
+    nanoid 
+    ${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.lib 
+    ws2_32
+    protobuf::libprotobuf 
+    gRPC::grpc++
+    absl::base
+    absl::strings
+)
+
+target_link_libraries(ConnectToolCore PRIVATE 
     nanoid 
     ${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.lib 
     ws2_32
@@ -97,19 +107,19 @@ target_link_libraries(ConnectToolServer PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(ConnectToolServer PRIVATE iphlpapi ole32)
+    target_link_libraries(ConnectToolCore PRIVATE iphlpapi ole32)
 endif()
 
 # Copy steam_api64.dll to output directory
-add_custom_command(TARGET ConnectToolServer POST_BUILD
+add_custom_command(TARGET ConnectToolCore POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
     "${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.dll"
-    $<TARGET_FILE_DIR:ConnectToolServer>)
+    $<TARGET_FILE_DIR:ConnectToolCore>)
 
 # Copy wintun.dll if on Windows
 if(WIN32)
-    add_custom_command(TARGET ConnectToolServer POST_BUILD
+    add_custom_command(TARGET ConnectToolCore POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/third_party/wintun/bin/amd64/wintun.dll"
-        $<TARGET_FILE_DIR:ConnectToolServer>)
+        $<TARGET_FILE_DIR:ConnectToolCore>)
 endif()
