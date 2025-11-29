@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <set>
 #include <chrono>
+#include <cstdlib>
 
 SteamVpnBridge::SteamVpnBridge(SteamNetworkingManager* steamManager)
     : steamManager_(steamManager)
@@ -147,7 +148,14 @@ void SteamVpnBridge::tunReadThread() {
             
             if (destIP == 0) {
                 // 无效的IP包
-                std::cerr << "TUN read thread: Dropping invalid IP packet." << std::endl;
+                std::cerr << "TUN read thread: Dropping invalid IP packet. Length: " << bytesRead << std::endl;
+                if (bytesRead >= 4) {
+                    std::cerr << "First 4 bytes: " 
+                              << std::hex << (int)buffer[0] << " " 
+                              << (int)buffer[1] << " " 
+                              << (int)buffer[2] << " " 
+                              << (int)buffer[3] << std::dec << std::endl;
+                }
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.packetsDropped++;
                 continue;
@@ -366,6 +374,7 @@ void SteamVpnBridge::handleVpnMessage(const uint8_t* data, size_t length, HSteam
 
                     std::lock_guard<std::mutex> lock(routingMutex_);
                     routingTable_[ipAddress] = entry;
+                    updateSystemRoute(ipAddress, true);
                     anyUpdate = true;
                     
                     std::cout << "Route updated: " << ipToString(ipAddress) 
@@ -407,6 +416,7 @@ void SteamVpnBridge::onUserJoined(CSteamID steamID, HSteamNetConnection conn) {
         // Remove any existing entries for this SteamID to avoid duplicates
         for (auto it = routingTable_.begin(); it != routingTable_.end(); ) {
             if (it->second.steamID == steamID) {
+                updateSystemRoute(it->first, false);
                 it = routingTable_.erase(it);
             } else {
                 ++it;
@@ -420,6 +430,7 @@ void SteamVpnBridge::onUserJoined(CSteamID steamID, HSteamNetConnection conn) {
         entry.name = SteamFriends()->GetFriendPersonaName(steamID);
         entry.isLocal = false;
         routingTable_[ip] = entry;
+        updateSystemRoute(ip, true);
     }
     std::cout << "Optimistically assigned IP " << ipToString(ip) << " to user " << steamID.ConvertToUint64() << std::endl;
     printRoutingTable();
@@ -443,6 +454,7 @@ void SteamVpnBridge::onUserLeft(CSteamID steamID) {
     }
 
     if (ipToRemove != 0) {
+        updateSystemRoute(ipToRemove, false);
         std::cout << "Removed route for IP " << ipToString(ipToRemove) 
                   << " from user " << steamID.ConvertToUint64() << std::endl;
         printRoutingTable();
@@ -764,4 +776,52 @@ uint32_t SteamVpnBridge::findNextAvailableIP(uint32_t startIP) {
     }
     
     return potentialIP;
+}
+
+void SteamVpnBridge::updateSystemRoute(uint32_t ip, bool add) {
+    if (!tunDevice_) return;
+
+    std::string ipStr = ipToString(ip);
+    std::string cmd;
+
+#ifdef _WIN32
+    uint32_t ifIndex = tunDevice_->get_interface_index();
+    if (ifIndex == 0) return;
+
+    if (add) {
+        // route add <ip> mask 255.255.255.0 0.0.0.0 IF <index>
+        cmd = "route add " + ipStr + " mask 255.255.255.255 0.0.0.0 IF " + std::to_string(ifIndex);
+    } else {
+        // route delete <ip>
+        cmd = "route delete " + ipStr;
+    }
+#elif defined(__APPLE__)
+    std::string devName = tunDevice_->get_device_name();
+    if (devName.empty()) return;
+
+    if (add) {
+        // route add -host <ip> -interface <dev>
+        cmd = "route add -host " + ipStr + " -interface " + devName;
+    } else {
+        // route delete -host <ip>
+        cmd = "route delete -host " + ipStr;
+    }
+#elif defined(__linux__)
+    std::string devName = tunDevice_->get_device_name();
+    if (devName.empty()) return;
+
+    if (add) {
+        // ip route add <ip>/32 dev <dev>
+        cmd = "ip route add " + ipStr + "/32 dev " + devName;
+    } else {
+        // ip route del <ip>/32 dev <dev>
+        cmd = "ip route del " + ipStr + "/32 dev " + devName;
+    }
+#endif
+
+    std::cout << "Executing system route command: " << cmd << std::endl;
+    int ret = system(cmd.c_str());
+    if (ret != 0) {
+        std::cerr << "Failed to execute route command: " << cmd << ", return code: " << ret << std::endl;
+    }
 }

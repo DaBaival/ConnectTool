@@ -35,6 +35,7 @@ public:
     std::string get_last_error() const override;
     uint32_t get_mtu() const override;
     bool set_non_blocking(bool non_blocking) override;
+    uint32_t get_interface_index() const override;
 
 private:
     WINTUN_ADAPTER_HANDLE adapter_;     // Wintun 适配器句柄

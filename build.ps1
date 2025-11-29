@@ -5,4 +5,4 @@ Enter-VsDevShell 79ad8a55
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake
 
 # Build
-cmake --build build --config Debug --target ConnectToolCore
+cmake --build build --config Release --target ConnectToolCore

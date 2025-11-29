@@ -1,12 +1,15 @@
 #include "steam_message_handler.h"
+#include "steam_networking_manager.h"
+#include "steam_message_handler.h"
+#include "steam_vpn_bridge.h"
 #include <iostream>
 #include <cstring>
 #include <chrono>
 #include <steam_api.h>
 #include <isteamnetworkingsockets.h>
 
-SteamMessageHandler::SteamMessageHandler(ISteamNetworkingSockets* interface, std::vector<HSteamNetConnection>& connections, std::mutex& connectionsMutex)
-    : m_pInterface_(interface), connections_(connections), connectionsMutex_(connectionsMutex), running_(false), currentPollInterval_(0) {}
+SteamMessageHandler::SteamMessageHandler(ISteamNetworkingSockets* interface, std::vector<HSteamNetConnection>& connections, std::mutex& connectionsMutex, SteamNetworkingManager* manager)
+    : m_pInterface_(interface), connections_(connections), connectionsMutex_(connectionsMutex), manager_(manager), running_(false), currentPollInterval_(0) {}
 
 SteamMessageHandler::~SteamMessageHandler() {
     stop();
@@ -48,10 +51,15 @@ void SteamMessageHandler::pollLoop() {
                 size_t size = pIncomingMsg->m_cbSize;
                 
                 // Check if this is a VPN message (first byte indicates message type)
-                if (size > 0 && data[0] >= 1 && data[0] <= 5) {
+                // VpnMessageType enum values range from 1 to 7
+                if (size > 0 && data[0] >= 1 && data[0] <= 7) {
                     // This might be a VPN message, forward to VPN bridge
-                    // We'll check for VPN bridge in the networking manager
-                    // For now, still handle as tunnel packet
+                    if (manager_) {
+                        SteamVpnBridge* bridge = manager_->getVpnBridge();
+                        if (bridge) {
+                            bridge->handleVpnMessage(data, size, conn);
+                        }
+                    }
                 }
                 
                 pIncomingMsg->Release();

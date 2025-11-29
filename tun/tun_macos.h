@@ -27,6 +27,7 @@ public:
     std::string get_last_error() const override;
     uint32_t get_mtu() const override;
     bool set_non_blocking(bool non_blocking) override;
+    uint32_t get_interface_index() const override;
 
 private:
     int fd_;                    // utun 设备文件描述符

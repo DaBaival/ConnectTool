@@ -90,6 +90,12 @@ public:
      * @return true 成功，false 失败
      */
     virtual bool set_non_blocking(bool non_blocking) = 0;
+
+    /**
+     * @brief Get the interface index (useful for system commands like route)
+     * @return Interface index (0 if not supported or invalid)
+     */
+    virtual uint32_t get_interface_index() const { return 0; }
 };
 
 /**

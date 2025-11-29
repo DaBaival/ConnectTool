@@ -91,7 +91,7 @@ bool SteamNetworkingManager::initialize()
     m_pInterface = SteamNetworkingSockets();
 
     // Initialize message handler
-    messageHandler_ = new SteamMessageHandler(m_pInterface, connections, connectionsMutex);
+    messageHandler_ = new SteamMessageHandler(m_pInterface, connections, connectionsMutex, this);
 
     // Check if callbacks are registered
     std::cout << "Steam Networking Manager initialized successfully" << std::endl;

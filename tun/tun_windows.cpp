@@ -403,6 +403,21 @@ bool TunWindows::set_non_blocking(bool non_blocking) {
     return true;
 }
 
+uint32_t TunWindows::get_interface_index() const {
+    if (!is_open()) {
+        return 0;
+    }
+
+    NET_LUID luid;
+    WintunGetAdapterLUID_(adapter_, &luid);
+
+    NET_IFINDEX index = 0;
+    if (ConvertInterfaceLuidToIndex(&luid, &index) == NO_ERROR) {
+        return index;
+    }
+    return 0;
+}
+
 } // namespace tun
 
 #endif // _WIN32

@@ -264,6 +264,15 @@ bool TunMacOS::set_non_blocking(bool non_blocking) {
   return true;
 }
 
+
+
+uint32_t TunMacOS::get_interface_index() const {
+    if (!is_open() || device_name_.empty()) {
+        return 0;
+    }
+    return if_nametoindex(device_name_.c_str());
+}
+
 } // namespace tun
 
 #endif // __APPLE__

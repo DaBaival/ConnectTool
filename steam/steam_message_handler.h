@@ -8,9 +8,11 @@
 #include <steamnetworkingtypes.h>
 #include <isteamnetworkingsockets.h>
 
+class SteamNetworkingManager;
+
 class SteamMessageHandler {
 public:
-    SteamMessageHandler(ISteamNetworkingSockets* interface, std::vector<HSteamNetConnection>& connections, std::mutex& connectionsMutex);
+    SteamMessageHandler(ISteamNetworkingSockets* interface, std::vector<HSteamNetConnection>& connections, std::mutex& connectionsMutex, SteamNetworkingManager* manager);
     ~SteamMessageHandler();
 
     void start();
@@ -22,6 +24,7 @@ private:
     ISteamNetworkingSockets* m_pInterface_;
     std::vector<HSteamNetConnection>& connections_;
     std::mutex& connectionsMutex_;
+    SteamNetworkingManager* manager_;
 
     std::unique_ptr<std::thread> pollThread_;
     bool running_;
