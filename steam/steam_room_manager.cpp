@@ -90,7 +90,7 @@ void SteamMatchmakingCallbacks::OnLobbyEntered(LobbyEnter_t *pCallback)
         CSteamID mySteamID = SteamUser()->GetSteamID();
         
         int numMembers = SteamMatchmaking()->GetNumLobbyMembers(pCallback->m_ulSteamIDLobby);
-        std::cout << "Connecting to " << numMembers << " lobby members..." << std::endl;
+        std::cout << "Connecting to " << (numMembers - 1) << " lobby members..." << std::endl;
         
         for (int i = 0; i < numMembers; ++i)
         {
@@ -123,8 +123,8 @@ void SteamMatchmakingCallbacks::OnLobbyChatUpdate(LobbyChatUpdate_t *pCallback)
         // If it's not us and we're already in the lobby, connect to the new member
         if (affectedUser != mySteamID && roomManager_->getCurrentLobby().IsValid())
         {
-            std::cout << "Initiating connection to new lobby member " << affectedUser.ConvertToUint64() << std::endl;
-            manager_->connectToPeer(affectedUser);
+            std::cout << "New member joined: " << affectedUser.ConvertToUint64() << " (Waiting for them to connect)" << std::endl;
+            // manager_->connectToPeer(affectedUser);
         }
     }
     else if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeLeft)

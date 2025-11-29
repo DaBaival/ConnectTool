@@ -167,15 +167,18 @@ void SteamVpnBridge::tunReadThread() {
         int bytesRead = tunDevice_->read(buffer, sizeof(buffer));
         
         if (bytesRead > 0) {
+            std::cout << "TUN read thread: Read " << bytesRead << " bytes from TUN device." << std::endl;
             // 提取目标IP
             uint32_t destIP = extractDestIP(buffer, bytesRead);
             
             if (destIP == 0) {
                 // 无效的IP包
+                std::cerr << "TUN read thread: Dropping invalid IP packet." << std::endl;
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.packetsDropped++;
                 continue;
             }
+            std::cout << "TUN read thread: Extracted destination IP: " << ipToString(destIP) << std::endl;
 
             // 查找路由
             HSteamNetConnection targetConn = k_HSteamNetConnection_Invalid;
@@ -185,13 +188,16 @@ void SteamVpnBridge::tunReadThread() {
                 if (it != routingTable_.end()) {
                     if (!it->second.isLocal) {
                         targetConn = it->second.conn;
+                        std::cout << "TUN read thread: Found route for " << ipToString(destIP) << ", target connection: " << it->second.steamID.ConvertToUint64() << std::endl;
                     } else {
                         // 发送给本地，忽略
+                        std::cout << "TUN read thread: Packet for local IP " << ipToString(destIP) << ", ignoring." << std::endl;
                         continue;
                     }
                 } else {
                     // 如果是广播或未知目标，发送给所有连接
                     // 这里简化处理，丢弃未知目标的包
+                    std::cerr << "TUN read thread: No route found for destination IP: " << ipToString(destIP) << ", dropping packet." << std::endl;
                     std::lock_guard<std::mutex> lock2(statsMutex_);
                     stats_.packetsDropped++;
                     continue;
@@ -220,16 +226,19 @@ void SteamVpnBridge::tunReadThread() {
                 );
 
                 if (result == k_EResultOK) {
+                    std::cout << "TUN read thread: Successfully sent " << vpnPacket.size() << " bytes to Steam connection " << targetConn << std::endl;
                     std::lock_guard<std::mutex> lock(statsMutex_);
                     stats_.packetsSent++;
                     stats_.bytesSent += bytesRead;
                 } else {
+                    std::cerr << "TUN read thread: Failed to send packet to Steam connection " << targetConn << ", result: " << result << std::endl;
                     std::lock_guard<std::mutex> lock(statsMutex_);
                     stats_.packetsDropped++;
                 }
             }
         } else if (bytesRead < 0) {
             // 读取错误，等待一下再试
+            std::cerr << "TUN read thread: Error reading from TUN device, bytesRead=" << bytesRead << ". Retrying soon." << std::endl;
             std::this_thread::sleep_for(std::chrono::milliseconds(10));
         } else {
             // 没有数据，等待一下
@@ -246,12 +255,10 @@ void SteamVpnBridge::tunWriteThread() {
     while (running_) {
         std::vector<OutgoingPacket> packetsToSend;
         
-        {
-            std::lock_guard<std::mutex> lock(sendQueueMutex_);
-            if (!sendQueue_.empty()) {
-                packetsToSend = std::move(sendQueue_);
-                sendQueue_.clear();
-            }
+        std::lock_guard<std::mutex> lock(sendQueueMutex_);
+        if (!sendQueue_.empty()) {
+            packetsToSend = std::move(sendQueue_);
+            sendQueue_.clear();
         }
         
         for (const auto& packet : packetsToSend) {
@@ -262,9 +269,11 @@ void SteamVpnBridge::tunWriteThread() {
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.packetsReceived++;
                 stats_.bytesReceived += bytesWritten;
+                std::cout << "TUN write thread: Wrote " << bytesWritten << " bytes to TUN device." << std::endl;
             } else {
                 std::lock_guard<std::mutex> lock(statsMutex_);
                 stats_.packetsDropped++;
+                std::cerr << "TUN write thread: Failed to write packet to TUN device, bytesWritten=" << bytesWritten << std::endl;
             }
         }
         

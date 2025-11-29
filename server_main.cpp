@@ -198,7 +198,6 @@ int main(int argc, char** argv) {
     // Main loop
     while (true) {
         core.update();
-        std::this_thread::sleep_for(std::chrono::milliseconds(16)); // ~60 FPS update rate
     }
 
     return 0;
