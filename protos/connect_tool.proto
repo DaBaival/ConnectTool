@@ -1,0 +1,120 @@
+syntax = "proto3";
+
+package connecttool;
+
+service ConnectToolService {
+  // Steam Initialization
+  rpc InitSteam (InitSteamRequest) returns (InitSteamResponse);
+  
+  // Lobby Management
+  rpc CreateLobby (CreateLobbyRequest) returns (CreateLobbyResponse);
+  rpc JoinLobby (JoinLobbyRequest) returns (JoinLobbyResponse);
+  rpc LeaveLobby (LeaveLobbyRequest) returns (LeaveLobbyResponse);
+  rpc GetLobbyInfo (GetLobbyInfoRequest) returns (GetLobbyInfoResponse);
+  rpc GetFriendLobbies (GetFriendLobbiesRequest) returns (GetFriendLobbiesResponse);
+  rpc InviteFriend (InviteFriendRequest) returns (InviteFriendResponse);
+
+  // VPN Management
+  rpc StartVPN (StartVPNRequest) returns (StartVPNResponse);
+  rpc StopVPN (StopVPNRequest) returns (StopVPNResponse);
+  rpc GetVPNStatus (GetVPNStatusRequest) returns (GetVPNStatusResponse);
+  rpc GetVPNRoutingTable (GetVPNRoutingTableRequest) returns (GetVPNRoutingTableResponse);
+}
+
+message InitSteamRequest {}
+message InitSteamResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message CreateLobbyRequest {}
+message CreateLobbyResponse {
+  bool success = 1;
+  string lobby_id = 2;
+}
+
+message JoinLobbyRequest {
+  string lobby_id = 1;
+}
+message JoinLobbyResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message LeaveLobbyRequest {}
+message LeaveLobbyResponse {
+  bool success = 1;
+}
+
+message LobbyMember {
+  string steam_id = 1;
+  string name = 2;
+  int32 ping = 3;
+  string relay_info = 4;
+}
+
+message GetLobbyInfoRequest {}
+message GetLobbyInfoResponse {
+  bool is_in_lobby = 1;
+  string lobby_id = 2;
+  repeated LobbyMember members = 3;
+}
+
+message FriendLobby {
+  string steam_id = 1;
+  string name = 2;
+  string lobby_id = 3;
+}
+
+message GetFriendLobbiesRequest {}
+message GetFriendLobbiesResponse {
+  repeated FriendLobby lobbies = 1;
+}
+
+message InviteFriendRequest {
+  string friend_steam_id = 1;
+}
+message InviteFriendResponse {
+  bool success = 1;
+}
+
+message StartVPNRequest {
+  string ip = 1; // e.g., "10.0.0.0"
+  string mask = 2; // e.g., "255.255.255.0"
+}
+message StartVPNResponse {
+  bool success = 1;
+  string message = 2;
+}
+
+message StopVPNRequest {}
+message StopVPNResponse {
+  bool success = 1;
+}
+
+message VPNStats {
+  uint64 packets_sent = 1;
+  uint64 bytes_sent = 2;
+  uint64 packets_received = 3;
+  uint64 bytes_received = 4;
+  uint64 packets_dropped = 5;
+}
+
+message GetVPNStatusRequest {}
+message GetVPNStatusResponse {
+  bool enabled = 1;
+  string local_ip = 2;
+  string device_name = 3;
+  VPNStats stats = 4;
+}
+
+message VPNRoute {
+  uint32 ip = 1;
+  string name = 2;
+  bool is_local = 3;
+}
+
+message GetVPNRoutingTableRequest {}
+message GetVPNRoutingTableResponse {
+  repeated VPNRoute routes = 1;
+}

@@ -24,7 +24,7 @@ std::vector<FriendLobbyInfo> SteamUtilsHelper::getFriendLobbies() {
             if (friendGameInfo.m_gameID.AppID() == currentAppID) {
                 if (friendGameInfo.m_steamIDLobby.IsValid()) {
                     const char* name = SteamFriends()->GetFriendPersonaName(friendID);
-                    lobbyList.push_back({friendGameInfo.m_steamIDLobby, name});
+                    lobbyList.push_back({friendGameInfo.m_steamIDLobby, friendID, name});
                 }
             }
         }

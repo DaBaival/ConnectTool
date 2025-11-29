@@ -10,21 +10,9 @@ if(WIN32)
 endif()
 
 # Find packages
-find_package(OpenGL REQUIRED)
-find_package(glfw3 CONFIG REQUIRED)
-
-# Add ImGui
-add_library(imgui STATIC
-    third_party/imgui/imgui.cpp
-    third_party/imgui/imgui_demo.cpp
-    third_party/imgui/imgui_draw.cpp
-    third_party/imgui/imgui_tables.cpp
-    third_party/imgui/imgui_widgets.cpp
-    third_party/imgui/backends/imgui_impl_glfw.cpp
-    third_party/imgui/backends/imgui_impl_opengl3.cpp
-)
-target_include_directories(imgui PUBLIC third_party/imgui third_party/imgui/backends)
-target_link_libraries(imgui PRIVATE glfw OpenGL::GL)
+find_package(Protobuf CONFIG REQUIRED)
+find_package(gRPC CONFIG REQUIRED)
+find_package(absl CONFIG REQUIRED)
 
 # Add nanoid_cpp
 add_subdirectory(third_party/nanoid_cpp)
@@ -35,34 +23,12 @@ set(TUN_SOURCES
 )
 
 if(UNIX AND NOT APPLE)
-    # Linux
     list(APPEND TUN_SOURCES tun/tun_linux.cpp)
-    message(STATUS "Building TUN module for Linux")
 elseif(APPLE)
-    # macOS
     list(APPEND TUN_SOURCES tun/tun_macos.cpp)
-    message(STATUS "Building TUN module for macOS")
 elseif(WIN32)
-    # Windows
     list(APPEND TUN_SOURCES tun/tun_windows.cpp)
-    message(STATUS "Building TUN module for Windows (Wintun)")
     include_directories(${CMAKE_SOURCE_DIR}/third_party/wintun/api)
-endif()
-
-# Add Online Game Tool executable
-add_executable(OnlineGameTool 
-    online_game_tool.cpp 
-    steam/steam_message_handler.cpp 
-    steam/steam_networking_manager.cpp 
-    steam/steam_room_manager.cpp 
-    steam/steam_utils.cpp 
-    steam/steam_vpn_bridge.cpp
-    ${TUN_SOURCES}
-)
-
-# Set compile options for UTF-8 support
-if(MSVC)
-    target_compile_options(OnlineGameTool PRIVATE /utf-8)
 endif()
 
 # Include directories
@@ -70,24 +36,80 @@ include_directories(${CMAKE_SOURCE_DIR})
 include_directories(${CMAKE_SOURCE_DIR}/steam)
 include_directories(${CMAKE_SOURCE_DIR}/third_party/nanoid_cpp/inc)
 include_directories(${CMAKE_SOURCE_DIR}/tun)
-
-# Include Steamworks
 include_directories(${CMAKE_SOURCE_DIR}/third_party/steamsdk/public/steam)
 
-# Link libraries
-target_link_libraries(OnlineGameTool PRIVATE imgui nanoid ${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.lib ws2_32 glfw)
+# Generate Protobuf/gRPC sources
+set(PROTO_SRC_DIR ${CMAKE_SOURCE_DIR}/protos)
+set(PROTO_BINARY_DIR ${CMAKE_BINARY_DIR}/protos)
+file(MAKE_DIRECTORY ${PROTO_BINARY_DIR})
 
-# Add TUN example executable (optional)
-option(BUILD_TUN_EXAMPLE "Build TUN example program" ON)
-if(BUILD_TUN_EXAMPLE)
-    add_executable(TunExample tun/example_tun.cpp ${TUN_SOURCES})
+# Helper function to generate protos
+function(generate_grpc_proto PROTO_FILE)
+    get_filename_component(PROTO_NAME ${PROTO_FILE} NAME_WE)
     
-    # Platform-specific libraries for TUN example
-    if(WIN32)
-        target_link_libraries(TunExample PRIVATE iphlpapi ws2_32 ole32)
-    elseif(UNIX)
-        target_link_libraries(TunExample PRIVATE pthread)
-    endif()
+    # Generated files
+    set(PROTO_SRCS "${PROTO_BINARY_DIR}/${PROTO_NAME}.pb.cc")
+    set(PROTO_HDRS "${PROTO_BINARY_DIR}/${PROTO_NAME}.pb.h")
+    set(GRPC_SRCS "${PROTO_BINARY_DIR}/${PROTO_NAME}.grpc.pb.cc")
+    set(GRPC_HDRS "${PROTO_BINARY_DIR}/${PROTO_NAME}.grpc.pb.h")
+
+    add_custom_command(
+        OUTPUT ${PROTO_SRCS} ${PROTO_HDRS} ${GRPC_SRCS} ${GRPC_HDRS}
+        COMMAND protobuf::protoc
+        ARGS --grpc_out=${PROTO_BINARY_DIR}
+             --cpp_out=${PROTO_BINARY_DIR}
+             --plugin=protoc-gen-grpc=$<TARGET_FILE:gRPC::grpc_cpp_plugin>
+             -I ${PROTO_SRC_DIR}
+             ${PROTO_FILE}
+        DEPENDS ${PROTO_FILE} protobuf::protoc gRPC::grpc_cpp_plugin
+    )
     
-    message(STATUS "TUN example will be built")
+    set(GENERATED_PROTO_SRCS ${PROTO_SRCS} ${GRPC_SRCS} PARENT_SCOPE)
+    set(GENERATED_PROTO_HDRS ${PROTO_HDRS} ${GRPC_HDRS} PARENT_SCOPE)
+endfunction()
+
+generate_grpc_proto(${PROTO_SRC_DIR}/connect_tool.proto)
+
+# ConnectToolServer Executable
+add_executable(ConnectToolServer
+    server_main.cpp
+    core/connect_tool_core.cpp
+    steam/steam_message_handler.cpp 
+    steam/steam_networking_manager.cpp 
+    steam/steam_room_manager.cpp 
+    steam/steam_utils.cpp 
+    steam/steam_vpn_bridge.cpp
+    ${TUN_SOURCES}
+    ${GENERATED_PROTO_SRCS}
+    ${GENERATED_PROTO_HDRS}
+)
+
+target_include_directories(ConnectToolServer PRIVATE ${PROTO_BINARY_DIR} ${CMAKE_BINARY_DIR})
+
+target_link_libraries(ConnectToolServer PRIVATE 
+    nanoid 
+    ${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.lib 
+    ws2_32
+    protobuf::libprotobuf 
+    gRPC::grpc++
+    absl::base
+    absl::strings
+)
+
+if(WIN32)
+    target_link_libraries(ConnectToolServer PRIVATE iphlpapi ole32)
+endif()
+
+# Copy steam_api64.dll to output directory
+add_custom_command(TARGET ConnectToolServer POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/third_party/steamsdk/redistributable_bin/win64/steam_api64.dll"
+    $<TARGET_FILE_DIR:ConnectToolServer>)
+
+# Copy wintun.dll if on Windows
+if(WIN32)
+    add_custom_command(TARGET ConnectToolServer POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${CMAKE_SOURCE_DIR}/third_party/wintun/bin/amd64/wintun.dll"
+        $<TARGET_FILE_DIR:ConnectToolServer>)
 endif()

@@ -5,6 +5,7 @@
 
 struct FriendLobbyInfo {
     CSteamID lobbyID;
+    CSteamID friendID;
     std::string friendName;
 };
 
