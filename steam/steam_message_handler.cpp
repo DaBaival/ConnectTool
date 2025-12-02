@@ -118,8 +118,8 @@ void SteamMessageHandler::pollMessages() {
     }
     
     for (auto conn : currentConnections) {
-        ISteamNetworkingMessage* pIncomingMsgs[10];
-        int numMsgs = m_pInterface_->ReceiveMessagesOnConnection(conn, pIncomingMsgs, 10);
+        ISteamNetworkingMessage* pIncomingMsgs[64];  // 增加到 64 条以提高吞吐量
+        int numMsgs = m_pInterface_->ReceiveMessagesOnConnection(conn, pIncomingMsgs, 64);
         totalMessages += numMsgs;
         
         for (int i = 0; i < numMsgs; ++i) {

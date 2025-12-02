@@ -273,8 +273,9 @@ bool TunWindows::open(const std::string& deviceName, int mtu) {
     WintunGetAdapterLUID(adapter_, &adapterLuid_);
 
     // 启动会话
-    // 使用 512KB 环形缓冲区
-    session_ = WintunStartSession(adapter_, 0x80000);
+    // 使用 4MB 环形缓冲区以支持高带宽传输
+    // 0x400000 = 4MB，默认 0x80000 = 512KB
+    session_ = WintunStartSession(adapter_, 0x400000);
     if (!session_) {
         setWindowsError("Failed to start WinTUN session");
         WintunCloseAdapter(adapter_);
@@ -319,10 +320,10 @@ int TunWindows::read(uint8_t* buffer, size_t size) {
             if (nonBlocking_) {
                 return 0;
             }
-            // 阻塞模式下等待数据
+            // 阻塞模式下等待数据，使用事件等待而不是循环轮询
             HANDLE event = WintunGetReadWaitEvent(session_);
             if (event) {
-                WaitForSingleObject(event, 100);  // 等待最多 100ms
+                WaitForSingleObject(event, 10);  // 等待最多 10ms
             }
             return 0;
         } else if (error == ERROR_HANDLE_EOF) {

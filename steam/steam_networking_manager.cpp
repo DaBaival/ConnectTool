@@ -70,6 +70,48 @@ bool SteamNetworkingManager::initialize()
         k_ESteamNetworkingConfig_Int32,
         &allowWithoutAuth);
 
+    // ============ 带宽优化配置 ============
+    // 根据 Steam 文档：SendRateMin 和 SendRateMax 应该设置为相同的值来强制使用特定速率
+    // 默认值约为 256 KB/s (2 Mbps)
+    // 设置为 50 MB/s (400 Mbps) - 一个很大的值来确保不会被限速
+    int32 sendRate = 50 * 1024 * 1024;  // 50 MB/s
+    
+    SteamNetworkingUtils()->SetConfigValue(
+        k_ESteamNetworkingConfig_SendRateMin,
+        k_ESteamNetworkingConfig_Global,
+        0,
+        k_ESteamNetworkingConfig_Int32,
+        &sendRate);
+    
+    SteamNetworkingUtils()->SetConfigValue(
+        k_ESteamNetworkingConfig_SendRateMax,
+        k_ESteamNetworkingConfig_Global,
+        0,
+        k_ESteamNetworkingConfig_Int32,
+        &sendRate);
+
+    // 增大发送缓冲区大小（默认 512KB，增加到 4MB）
+    int32 sendBufferSize = 4 * 1024 * 1024; // 4 MB
+    SteamNetworkingUtils()->SetConfigValue(
+        k_ESteamNetworkingConfig_SendBufferSize,
+        k_ESteamNetworkingConfig_Global,
+        0,
+        k_ESteamNetworkingConfig_Int32,
+        &sendBufferSize);
+
+    // 禁用 Nagle 算法以减少延迟（对于实时 VPN 流量很重要）
+    int32 nagleTime = 0; // 0 表示禁用 Nagle
+    SteamNetworkingUtils()->SetConfigValue(
+        k_ESteamNetworkingConfig_NagleTime,
+        k_ESteamNetworkingConfig_Global,
+        0,
+        k_ESteamNetworkingConfig_Int32,
+        &nagleTime);
+
+    std::cout << "[SteamNetworkingManager] Bandwidth optimization: SendRate=" 
+              << (sendRate / 1024 / 1024) << " MB/s, SendBufferSize=" 
+              << (sendBufferSize / 1024 / 1024) << " MB" << std::endl;
+
     // Create callbacks after Steam API init
     SteamNetworkingUtils()->InitRelayNetworkAccess();
     // 注意：不再使用 SetGlobalCallback，而是使用 STEAM_CALLBACK 宏
