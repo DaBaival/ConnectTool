@@ -293,7 +293,6 @@ void SteamVpnBridge::handleVpnMessage(const uint8_t* data, size_t length, HSteam
 
     switch (header.type) {
         case VpnMessageType::ROUTE_UPDATE: {
-            bool hasNewRoutes = false;
             size_t offset = 0;
             while (offset + 12 <= payloadLength) {
                 uint64_t steamID;
@@ -311,18 +310,13 @@ void SteamVpnBridge::handleVpnMessage(const uint8_t* data, size_t length, HSteam
                 }
                 
                 // 检查是否已经有这个路由
-                bool isNewRoute = false;
                 {
                     std::lock_guard<std::mutex> lock(routingMutex_);
                     auto it = routingTable_.find(ipAddress);
-                    isNewRoute = (it == routingTable_.end());
+                    if (it != routingTable_.end()) {
+                        continue; // 已有这个路由，跳过
+                    }
                 }
-                
-                if (!isNewRoute) {
-                    continue; // 已有这个路由，跳过
-                }
-                
-                hasNewRoutes = true;
                 
                 // 检查是否有直接连接到该节点
                 HSteamNetConnection directConn = k_HSteamNetConnection_Invalid;
@@ -347,15 +341,9 @@ void SteamVpnBridge::handleVpnMessage(const uint8_t* data, size_t length, HSteam
                 }
             }
             
-            // 如果学到了新路由，广播给其他节点（不包括发送者）
-            if (hasNewRoutes) {
-                const auto& connections = steamManager_->getConnections();
-                for (auto conn : connections) {
-                    if (conn != fromConn) {
-                        sendRouteUpdateTo(conn);
-                    }
-                }
-            }
+            // 注意：不再在收到 ROUTE_UPDATE 后自动广播
+            // 路由传播只通过 ADDRESS_ANNOUNCE 和新用户加入时主动发送
+            // 这样可以避免路由风暴（每个节点收到更新后又广播导致无限循环）
             break;
         }
 
