@@ -1,0 +1,32 @@
+{
+    "min_version": "1.0.0",
+    "app": {
+        "name": "ConnectTool",
+        "steam_app_id": 480
+    },
+    "vpn": {
+        "virtual_subnet": "10.0.0.0",
+        "subnet_mask": "255.0.0.0",
+        "default_mtu": 1400,
+        "tun_device_name": "SteamVPN"
+    },
+    "protocol": {
+        "app_secret_salt": "ConnectTool_VPN_Salt_v1",
+        "probe_timeout_ms": 500,
+        "heartbeat_interval_ms": 60000,
+        "lease_time_ms": 120000,
+        "lease_expiry_ms": 360000,
+        "heartbeat_expiry_ms": 180000,
+        "node_id_size": 32
+    },
+    "networking": {
+        "send_rate_mb": 50,
+        "send_buffer_size_mb": 4,
+        "nagle_time": 0,
+        "steam_callback_interval_ms": 10
+    },
+    "server": {
+        "unix_socket_path_windows": "connect_tool.sock",
+        "unix_socket_path_unix": "/tmp/connect_tool.sock"
+    }
+}
