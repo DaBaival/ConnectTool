@@ -1,5 +1,6 @@
 #include "steam_vpn_bridge.h"
 #include "steam_networking_manager.h"
+#include "config/config_manager.h"
 #include <iostream>
 #include <cstring>
 
@@ -32,6 +33,10 @@ bool SteamVpnBridge::start(const std::string& tunDeviceName,
         return false;
     }
 
+    // 获取配置
+    const auto& config = ConfigManager::instance().getConfig();
+    int mtu = config.vpn.default_mtu;
+
     // 创建TUN设备
     tunDevice_ = tun::create_tun();
     if (!tunDevice_) {
@@ -39,8 +44,8 @@ bool SteamVpnBridge::start(const std::string& tunDeviceName,
         return false;
     }
 
-    // 打开TUN设备
-    if (!tunDevice_->open(tunDeviceName, 1400)) { 
+    // 打开TUN设备（使用配置的 MTU）
+    if (!tunDevice_->open(tunDeviceName, mtu)) { 
         std::cerr << "Failed to open TUN device: " << tunDevice_->get_last_error() << std::endl;
         return false;
     }

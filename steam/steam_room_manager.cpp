@@ -1,6 +1,7 @@
 #include "steam_room_manager.h"
 #include "steam_networking_manager.h"
 #include "steam_vpn_bridge.h"
+#include "config/config_manager.h"
 #include <iostream>
 #include <string>
 #include <algorithm>
@@ -89,8 +90,15 @@ void SteamMatchmakingCallbacks::OnLobbyEntered(LobbyEnter_t *pCallback)
 
         // 【新增】自动启动VPN
         if (manager_->getVpnBridge()) {
-            std::cout << "Auto-starting VPN with default settings (10.0.0.0/8)..." << std::endl;
-            manager_->getVpnBridge()->start("", "10.0.0.0", "255.0.0.0");
+            const auto& config = ConfigManager::instance().getConfig();
+            std::cout << "Auto-starting VPN with settings (" 
+                      << config.vpn.virtual_subnet << "/" 
+                      << config.vpn.subnet_mask << ")..." << std::endl;
+            manager_->getVpnBridge()->start(
+                config.vpn.tun_device_name,
+                config.vpn.virtual_subnet,
+                config.vpn.subnet_mask
+            );
         }
         
         // Connect to all existing members in the lobby (except ourselves)

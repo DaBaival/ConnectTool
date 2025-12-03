@@ -17,6 +17,9 @@ find_package(absl CONFIG REQUIRED)
 # Find Asio
 find_package(asio CONFIG REQUIRED)
 
+# Find simdjson
+find_package(simdjson CONFIG REQUIRED)
+
 # Add nanoid_cpp
 add_subdirectory(third_party/nanoid_cpp)
 
@@ -80,8 +83,14 @@ set(NET_SOURCES
     net/heartbeat_manager.cpp
 )
 
-# Include net directory
+# Config module sources
+set(CONFIG_SOURCES
+    config/config_manager.cpp
+)
+
+# Include net and config directories
 include_directories(${CMAKE_SOURCE_DIR}/net)
+include_directories(${CMAKE_SOURCE_DIR}/config)
 
 # ConnectToolCore Executable
 add_executable(ConnectToolCore
@@ -93,6 +102,7 @@ add_executable(ConnectToolCore
     steam/steam_utils.cpp 
     steam/steam_vpn_bridge.cpp
     ${NET_SOURCES}
+    ${CONFIG_SOURCES}
     ${TUN_SOURCES}
     ${GENERATED_PROTO_SRCS}
     ${GENERATED_PROTO_HDRS}
@@ -109,6 +119,7 @@ target_link_libraries(ConnectToolCore PRIVATE
     absl::base
     absl::strings
     asio
+    simdjson::simdjson
 )
 
 target_link_libraries(ConnectToolCore PRIVATE 
@@ -122,7 +133,7 @@ target_link_libraries(ConnectToolCore PRIVATE
 )
 
 if(WIN32)
-    target_link_libraries(ConnectToolCore PRIVATE iphlpapi ole32 rpcrt4)
+    target_link_libraries(ConnectToolCore PRIVATE iphlpapi ole32 rpcrt4 winhttp)
 endif()
 
 # Copy steam_api64.dll to output directory
@@ -137,4 +148,57 @@ if(WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${CMAKE_SOURCE_DIR}/third_party/wintun/bin/amd64/wintun.dll"
         $<TARGET_FILE_DIR:ConnectToolCore>)
+endif()
+
+# Require Administrator privileges (Windows)
+if(WIN32)
+    # Embed manifest requiring admin privileges
+    # 使用 /MANIFEST:NO 禁用自动清单生成，然后用 mt.exe 手动合并
+    set_target_properties(ConnectToolCore PROPERTIES
+        LINK_FLAGS "/MANIFEST:NO"
+    )
+    # 查找 mt.exe (Windows SDK Manifest Tool)
+    find_program(MT_EXECUTABLE mt.exe
+        HINTS
+        "$ENV{WindowsSdkVerBinPath}/x64"
+        "$ENV{WindowsSdkDir}/bin/${CMAKE_VS_WINDOWS_TARGET_PLATFORM_VERSION}/x64"
+        "C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64"
+        "C:/Program Files (x86)/Windows Kits/10/bin/10.0.22621.0/x64"
+        "C:/Program Files (x86)/Windows Kits/10/bin/10.0.22000.0/x64"
+        "C:/Program Files (x86)/Windows Kits/10/bin/10.0.19041.0/x64"
+    )
+    if(NOT MT_EXECUTABLE)
+        message(WARNING "mt.exe not found, admin privilege manifest will not be embedded")
+    else()
+        message(STATUS "Found mt.exe: ${MT_EXECUTABLE}")
+        # 使用 POST_BUILD 手动嵌入清单
+        add_custom_command(TARGET ConnectToolCore POST_BUILD
+            COMMAND "${MT_EXECUTABLE}" -manifest "${CMAKE_SOURCE_DIR}/app.manifest" "-outputresource:$<TARGET_FILE:ConnectToolCore>;#1"
+            COMMENT "Embedding manifest with admin privileges"
+        )
+    endif()
+endif()
+
+# Linux/macOS: Add install target with setcap/setuid for privilege elevation
+if(UNIX)
+    # Install the executable
+    install(TARGETS ConnectToolCore DESTINATION bin)
+    
+    if(APPLE)
+        # macOS: Create a post-install script hint
+        # Note: macOS apps typically use Authorization Services or require sudo
+        message(STATUS "macOS: Run with 'sudo' or use Authorization Services for elevated privileges")
+    else()
+        # Linux: Use setcap to grant network admin capabilities (preferred over setuid)
+        # This allows the program to manage network interfaces without full root
+        install(CODE "
+            execute_process(
+                COMMAND setcap cap_net_admin,cap_net_raw+eip \${CMAKE_INSTALL_PREFIX}/bin/ConnectToolCore
+                RESULT_VARIABLE SETCAP_RESULT
+            )
+            if(NOT SETCAP_RESULT EQUAL 0)
+                message(WARNING \"Failed to set capabilities. Run: sudo setcap cap_net_admin,cap_net_raw+eip \${CMAKE_INSTALL_PREFIX}/bin/ConnectToolCore\")
+            endif()
+        ")
+    endif()
 endif()

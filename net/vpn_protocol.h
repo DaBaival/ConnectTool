@@ -9,13 +9,14 @@
 #include <isteamnetworkingsockets.h>
 
 // ============================================================================
-// 分布式 IP 分配协议常量
+// 分布式 IP 分配协议常量（默认值）
+// 这些值可以通过 ConfigManager 在运行时覆盖
 // ============================================================================
 
-// 应用程序私密盐（用于 Node ID 生成）
+// 应用程序私密盐（用于 Node ID 生成）- 默认值
 constexpr const char* APP_SECRET_SALT = "ConnectTool_VPN_Salt_v1";
 
-// 协议时间常量（毫秒）
+// 协议时间常量（毫秒）- 默认值
 constexpr int64_t PROBE_TIMEOUT_MS = 500;           // 探测超时时间
 constexpr int64_t HEARTBEAT_INTERVAL_MS = 60000;    // 心跳间隔（60秒）
 constexpr int64_t LEASE_TIME_MS = 120000;           // 租约时间（120秒）

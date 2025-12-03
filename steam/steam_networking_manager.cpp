@@ -1,5 +1,6 @@
 #include "steam_networking_manager.h"
 #include "steam_vpn_bridge.h"
+#include "config/config_manager.h"
 #include <iostream>
 #include <algorithm>
 
@@ -72,9 +73,9 @@ bool SteamNetworkingManager::initialize()
 
     // ============ 带宽优化配置 ============
     // 根据 Steam 文档：SendRateMin 和 SendRateMax 应该设置为相同的值来强制使用特定速率
-    // 默认值约为 256 KB/s (2 Mbps)
-    // 设置为 50 MB/s (400 Mbps) - 一个很大的值来确保不会被限速
-    int32 sendRate = 50 * 1024 * 1024;  // 50 MB/s
+    // 使用配置管理器中的设置
+    const auto& config = ConfigManager::instance().getConfig();
+    int32 sendRate = config.networking.send_rate_mb * 1024 * 1024;  // MB/s -> bytes/s
     
     SteamNetworkingUtils()->SetConfigValue(
         k_ESteamNetworkingConfig_SendRateMin,
@@ -90,8 +91,8 @@ bool SteamNetworkingManager::initialize()
         k_ESteamNetworkingConfig_Int32,
         &sendRate);
 
-    // 增大发送缓冲区大小（默认 512KB，增加到 4MB）
-    int32 sendBufferSize = 4 * 1024 * 1024; // 4 MB
+    // 增大发送缓冲区大小（使用配置值）
+    int32 sendBufferSize = config.networking.send_buffer_size_mb * 1024 * 1024; // MB -> bytes
     SteamNetworkingUtils()->SetConfigValue(
         k_ESteamNetworkingConfig_SendBufferSize,
         k_ESteamNetworkingConfig_Global,
@@ -100,7 +101,7 @@ bool SteamNetworkingManager::initialize()
         &sendBufferSize);
 
     // 禁用 Nagle 算法以减少延迟（对于实时 VPN 流量很重要）
-    int32 nagleTime = 0; // 0 表示禁用 Nagle
+    int32 nagleTime = config.networking.nagle_time; // 0 表示禁用 Nagle
     SteamNetworkingUtils()->SetConfigValue(
         k_ESteamNetworkingConfig_NagleTime,
         k_ESteamNetworkingConfig_Global,

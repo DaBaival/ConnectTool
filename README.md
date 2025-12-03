@@ -135,6 +135,65 @@ ConnectTool/
 - **构建系统**: CMake
 - **语言标准**: C++17
 
+## 配置系统
+
+程序**必须**从远程服务器加载配置才能启动。配置中包含最低版本要求，如果应用版本低于要求则会退出。
+
+### 配置文件 URL
+
+程序会按顺序尝试以下地址加载配置，直到成功：
+
+1. GitHub 原始地址
+2. gh-proxy.org 主站（Cloudflare 全球加速）
+3. 香港节点（国内线路优化）
+4. Fastly CDN
+5. EdgeOne 全球加速
+6. IPv6 支持节点
+
+如果所有地址都无法访问，程序将退出。
+
+### 配置项说明
+
+```json
+{
+    "min_version": "1.0.0",
+    "app": {
+        "name": "ConnectTool",
+        "steam_app_id": 480
+    },
+    "vpn": {
+        "virtual_subnet": "10.0.0.0",
+        "subnet_mask": "255.0.0.0",
+        "default_mtu": 1400,
+        "tun_device_name": "SteamVPN"
+    },
+    "protocol": {
+        "app_secret_salt": "ConnectTool_VPN_Salt_v1",
+        "probe_timeout_ms": 500,
+        "heartbeat_interval_ms": 60000,
+        "lease_time_ms": 120000,
+        "lease_expiry_ms": 360000,
+        "heartbeat_expiry_ms": 180000
+    },
+    "networking": {
+        "send_rate_mb": 50,
+        "send_buffer_size_mb": 4,
+        "nagle_time": 0,
+        "steam_callback_interval_ms": 10
+    },
+    "server": {
+        "unix_socket_path_windows": "connect_tool.sock",
+        "unix_socket_path_unix": "/tmp/connect_tool.sock"
+    }
+}
+```
+
+### 版本检查
+
+- `min_version`: 最低版本要求
+- 如果应用版本低于此值，程序将显示错误并退出
+- 请确保始终使用最新版本
+
 ## 注意事项
 
 - 程序运行时需要 Steam 客户端处于登录状态

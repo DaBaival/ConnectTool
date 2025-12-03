@@ -5,7 +5,8 @@
     "grpc",
     "protobuf",
     "abseil",
-    "asio"
+    "asio",
+    "simdjson"
   ],
   "builtin-baseline": "ae8fa5ae5e6162a88e412618245809ed2aa579d9"
 }

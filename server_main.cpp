@@ -13,6 +13,7 @@
 #include "protos/connect_tool.grpc.pb.h"
 #include "core/connect_tool_core.h"
 #include "core/asio_event_loop.h"
+#include "config/config_manager.h"
 
 using grpc::Server;
 using grpc::ServerBuilder;
@@ -36,10 +37,17 @@ using connecttool::GetVPNStatusRequest;
 using connecttool::GetVPNStatusResponse;
 using connecttool::GetVPNRoutingTableRequest;
 using connecttool::GetVPNRoutingTableResponse;
+using connecttool::GetVersionRequest;
+using connecttool::GetVersionResponse;
 
 class ConnectToolServiceImpl final : public ConnectToolService::Service {
 public:
     ConnectToolServiceImpl(ConnectToolCore* core) : core_(core) {}
+
+    Status GetVersion(ServerContext* context, const GetVersionRequest* request, GetVersionResponse* reply) override {
+        reply->set_version(APP_VERSION_STRING);
+        return Status::OK;
+    }
 
     Status CreateLobby(ServerContext* context, const CreateLobbyRequest* request, CreateLobbyResponse* reply) override {
         std::lock_guard<std::mutex> lock(mutex_);
@@ -207,6 +215,33 @@ int main(int argc, char** argv) {
     sigaction(SIGTERM, &sa, nullptr);
 #endif
 
+    std::cout << "=== ConnectTool v" << APP_VERSION_STRING << " ===" << std::endl;
+
+    // 初始化配置管理器 - 从远程加载配置
+    auto& configManager = ConfigManager::instance();
+    
+    std::cout << "Loading configuration from remote server..." << std::endl;
+    if (!configManager.loadFromRemote()) {
+        std::cerr << "ERROR: Failed to load configuration from all remote sources!" << std::endl;
+        std::cerr << "Please check your network connection and try again." << std::endl;
+        std::cerr << "Error: " << configManager.getLastError() << std::endl;
+        return 1;
+    }
+
+    // 检查版本要求
+    if (!configManager.checkVersion()) {
+        std::cerr << "ERROR: Application version is too old!" << std::endl;
+        std::cerr << "Current version: " << ConfigManager::getAppVersion() << std::endl;
+        std::cerr << "Minimum required version: " << configManager.getMinVersion() << std::endl;
+        std::cerr << "Please update to the latest version." << std::endl;
+        return 1;
+    }
+
+    std::cout << "Configuration loaded successfully. Min version: " 
+              << configManager.getMinVersion() << std::endl;
+
+    const auto& config = configManager.getConfig();
+
     // Initialize Core
     ConnectToolCore core;
     if (!core.initSteam()) {
@@ -218,15 +253,16 @@ int main(int argc, char** argv) {
     auto& eventLoop = AsioEventLoop::instance();
     auto& ioContext = eventLoop.getContext();
 
-    // 创建 Steam 回调定时器 (10ms 间隔)
-    SteamCallbackTimer steamTimer(ioContext, &core, std::chrono::milliseconds(10));
+    // 创建 Steam 回调定时器（使用配置的间隔）
+    SteamCallbackTimer steamTimer(ioContext, &core, 
+        std::chrono::milliseconds(config.networking.steam_callback_interval_ms));
     steamTimer.start();
 
-    // Define server address based on platform
+    // Define server address based on platform（使用配置的路径）
 #ifdef _WIN32
-    std::string socket_path = "connect_tool.sock";
+    std::string socket_path = config.server.unix_socket_path_windows;
 #else
-    std::string socket_path = "/tmp/connect_tool.sock";
+    std::string socket_path = config.server.unix_socket_path_unix;
 #endif
 
     // Remove the socket file if it already exists
