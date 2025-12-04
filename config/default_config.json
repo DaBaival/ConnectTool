@@ -20,7 +20,7 @@
         "node_id_size": 32
     },
     "networking": {
-        "send_rate_mb": 50,
+        "send_rate_mb": 10,
         "send_buffer_size_mb": 4,
         "nagle_time": 0,
         "steam_callback_interval_ms": 10
