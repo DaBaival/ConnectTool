@@ -101,18 +101,7 @@ void SteamMatchmakingCallbacks::OnLobbyEntered(LobbyEnter_t *pCallback)
             );
         }
         
-        // 通知 VPN bridge 处理已存在的大厅成员
-        std::set<CSteamID> members = roomManager_->getMembers(false);
-        std::cout << "Found " << members.size() << " other lobby members" << std::endl;
-        
-        // VPN bridge 会通过房间成员列表实时获取成员
-        // 这里只需要通知有新成员需要建立连接
-        if (manager_->getVpnBridge()) {
-            for (const auto& memberID : members) {
-                std::cout << "Notifying VPN bridge about member: " << memberID.ConvertToUint64() << std::endl;
-                manager_->getVpnBridge()->onUserJoined(memberID);
-            }
-        }
+
     }
     else
     {
@@ -133,10 +122,15 @@ void SteamMatchmakingCallbacks::OnLobbyChatUpdate(LobbyChatUpdate_t *pCallback)
         // 新成员加入，通知 VPN bridge
         if (affectedUser != mySteamID && roomManager_->getCurrentLobby().IsValid())
         {
+            std::cout << "User joined, but we won't query them. Waiting for their IP Query." << std::endl;
+            // DISABLE: To prevent "both sides sending", we let the new user initiate the query (via broadcast).
+            // We will learn their IP from their Query, and respond with ours.
+            /*
             std::cout << "Notifying VPN bridge about new member: " << affectedUser.ConvertToUint64() << std::endl;
             if (manager_->getVpnBridge()) {
                 manager_->getVpnBridge()->onUserJoined(affectedUser);
             }
+            */
         }
     }
     else if (pCallback->m_rgfChatMemberStateChange & k_EChatMemberStateChangeLeft)
@@ -250,13 +244,26 @@ std::set<CSteamID> SteamRoomManager::getMembers(bool includeSelf) const
     {
         CSteamID mySteamID = SteamUser()->GetSteamID();
         int numMembers = SteamMatchmaking()->GetNumLobbyMembers(currentLobby);
+        
+        // Debug logging enabled
+        std::cout << "[SteamRoomManager] getMembers: Lobby " << currentLobby.ConvertToUint64() 
+                  << " has " << numMembers << " members." << std::endl;
+
         for (int i = 0; i < numMembers; ++i)
         {
             CSteamID memberID = SteamMatchmaking()->GetLobbyMemberByIndex(currentLobby, i);
             if (includeSelf || memberID != mySteamID) {
                 members.insert(memberID);
+            } else {
+                 std::cout << "[SteamRoomManager] Skipping self: " << memberID.ConvertToUint64() << std::endl;
             }
         }
+        
+        if (members.empty()) { // Log warning if empty regardless of numMembers to be safe
+             // std::cout << "[SteamRoomManager] Warning: members set is empty." << std::endl;
+        }
+    } else {
+        std::cout << "[SteamRoomManager] getMembers called but currentLobby is nil" << std::endl;
     }
     return members;
 }

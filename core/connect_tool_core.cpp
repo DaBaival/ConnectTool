@@ -24,6 +24,8 @@ bool ConnectToolCore::initSteam() {
     }
 
     roomManager = std::make_unique<SteamRoomManager>(steamManager.get());
+    steamManager->setRoomManager(roomManager.get());
+    
     vpnBridge = std::make_unique<SteamVpnBridge>(steamManager.get());
     steamManager->setVpnBridge(vpnBridge.get());
 

@@ -34,6 +34,31 @@ void SteamNetworkingManager::OnSessionFailed(SteamNetworkingMessagesSessionFaile
               << ": " << pCallback->m_info.m_szEndDebug << std::endl;
 }
 
+// STEAM_CALLBACK 回调函数 - 当 FakeIP 请求完成时
+void SteamNetworkingManager::OnFakeIPResult(SteamNetworkingFakeIPResult_t *pCallback)
+{
+    if (pCallback->m_eResult == k_EResultOK)
+    {
+        m_fakeIP.SetIPv4(pCallback->m_unIP, pCallback->m_unPorts[0]);
+        char szIP[64];
+        m_fakeIP.ToString(szIP, sizeof(szIP), false);
+        std::cout << "[SteamNetworkingManager] FakeIP assigned: " << szIP << std::endl;
+    }
+    else
+    {
+        std::cerr << "[SteamNetworkingManager] Failed to get FakeIP. Result: " << pCallback->m_eResult << std::endl;
+    }
+}
+
+uint32_t SteamNetworkingManager::getLocalFakeIP() const
+{
+    if (m_fakeIP.IsFakeIP())
+    {
+        return m_fakeIP.GetIPv4();
+    }
+    return 0;
+}
+
 SteamNetworkingManager::SteamNetworkingManager()
     : m_pMessagesInterface(nullptr)
     , roomManager_(nullptr)
@@ -130,7 +155,18 @@ bool SteamNetworkingManager::initialize()
     // Initialize message handler
     messageHandler_ = new SteamMessageHandler(m_pMessagesInterface, this);
 
+    // Request FakeIP
+    // Request 1 port. We don't strictly need ports for VPN tunnel, but it's good practice.
+    // The result will be handled in OnFakeIPResult.
+    if (SteamNetworkingSockets()) {
+        std::cout << "[SteamNetworkingManager] Requesting FakeIP..." << std::endl;
+        SteamNetworkingSockets()->BeginAsyncRequestFakeIP(1);
+    }
+
     std::cout << "[SteamNetworkingManager] Steam Networking Manager initialized with ISteamNetworkingMessages" << std::endl;
+
+    // Start message handler to begin polling for messages
+    startMessageHandler();
 
     return true;
 }
@@ -157,11 +193,6 @@ bool SteamNetworkingManager::sendMessageToUser(CSteamID peerID, const void* data
     SteamNetworkingIdentity identity;
     identity.SetSteamID(peerID);
     
-    // 对于可靠消息，自动添加 AutoRestartBrokenSession flag 以支持断线重连
-    if (flags & k_nSteamNetworkingSend_Reliable) {
-        flags |= k_nSteamNetworkingSend_AutoRestartBrokenSession;
-    }
-    
     EResult result = m_pMessagesInterface->SendMessageToUser(identity, data, size, flags, VPN_CHANNEL);
     return result == k_EResultOK;
 }
@@ -170,14 +201,12 @@ void SteamNetworkingManager::broadcastMessage(const void* data, uint32_t size, i
 {
     if (!m_pMessagesInterface) return;
     
-    // 对于可靠消息，自动添加 AutoRestartBrokenSession flag 以支持断线重连
-    if (flags & k_nSteamNetworkingSend_Reliable) {
-        flags |= k_nSteamNetworkingSend_AutoRestartBrokenSession;
-    }
-    
     // 实时从房间获取成员列表
     std::set<CSteamID> members = getRoomMembers();
+    std::cout << "[SteamNetworkingManager] Broadcasting to " << members.size() << " members" << std::endl;
+    
     for (const auto& memberID : members) {
+        std::cout << "  -> " << memberID.ConvertToUint64() << std::endl;
         SteamNetworkingIdentity identity;
         identity.SetSteamID(memberID);
         m_pMessagesInterface->SendMessageToUser(identity, data, size, flags, VPN_CHANNEL);
@@ -243,6 +272,22 @@ std::string SteamNetworkingManager::getPeerConnectionType(CSteamID peerID) const
         return "本机";
     }
     return "挂起";
+}
+
+int SteamNetworkingManager::getPendingSendBytes(CSteamID peerID) const
+{
+    if (!m_pMessagesInterface) return 0;
+    
+    SteamNetworkingIdentity identity;
+    identity.SetSteamID(peerID);
+    
+    SteamNetConnectionRealTimeStatus_t status;
+    ESteamNetworkingConnectionState state = m_pMessagesInterface->GetSessionConnectionInfo(identity, nullptr, &status);
+    
+    if (state == k_ESteamNetworkingConnectionState_Connected) {
+        return status.m_cbPendingReliable + status.m_cbPendingUnreliable;
+    }
+    return 0;
 }
 
 void SteamNetworkingManager::startMessageHandler()

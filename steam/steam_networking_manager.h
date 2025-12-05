@@ -9,6 +9,7 @@
 #include <isteamnetworkingmessages.h>
 #include <isteamnetworkingutils.h>
 #include <steamnetworkingtypes.h>
+#include <steamnetworkingfakeip.h>
 #include "steam_message_handler.h"
 
 // Forward declarations
@@ -55,6 +56,7 @@ public:
     int getPeerPing(CSteamID peerID) const;
     bool isPeerConnected(CSteamID peerID) const;
     std::string getPeerConnectionType(CSteamID peerID) const;
+    int getPendingSendBytes(CSteamID peerID) const;
 
     // Getters
     bool isInRoom() const;
@@ -68,6 +70,9 @@ public:
     // VPN Bridge
     void setVpnBridge(SteamVpnBridge* vpnBridge) { vpnBridge_ = vpnBridge; }
     SteamVpnBridge* getVpnBridge() { return vpnBridge_; }
+
+    // FakeIP
+    uint32_t getLocalFakeIP() const;
 
     // VPN 消息通道
     static constexpr int VPN_CHANNEL = 0;
@@ -85,9 +90,13 @@ private:
     // VPN Bridge
     SteamVpnBridge* vpnBridge_;
 
+    // FakeIP
+    SteamNetworkingIPAddr m_fakeIP;
+
     // 回调处理
     STEAM_CALLBACK(SteamNetworkingManager, OnSessionRequest, SteamNetworkingMessagesSessionRequest_t);
     STEAM_CALLBACK(SteamNetworkingManager, OnSessionFailed, SteamNetworkingMessagesSessionFailed_t);
+    STEAM_CALLBACK(SteamNetworkingManager, OnFakeIPResult, SteamNetworkingFakeIPResult_t);
 
     friend class SteamRoomManager;
 };

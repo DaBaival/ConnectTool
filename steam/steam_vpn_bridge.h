@@ -14,9 +14,6 @@
 
 #include "../tun/tun_interface.h"
 #include "../vpn/vpn_protocol.h"
-#include "../vpn/ip_negotiator.h"
-#include "../vpn/heartbeat_manager.h"
-#include "../vpn/vpn_route_manager.h"
 
 // Forward declarations
 class SteamNetworkingManager;
@@ -26,6 +23,7 @@ class SteamNetworkingManager;
  * 
  * 负责在虚拟网卡和Steam网络之间转发IP数据包
  * 使用 ISteamNetworkingMessages 实现无连接的消息传递
+ * 使用 Steam Fake IP 进行寻址
  */
 class SteamVpnBridge {
 public:
@@ -35,13 +33,13 @@ public:
     /**
      * @brief 启动VPN桥接
      * @param tunDeviceName TUN设备名称（可选）
-     * @param virtualSubnet 虚拟子网（如 "10.0.0.0"）
-     * @param subnetMask 子网掩码（如 "255.255.255.0"）
+     * @param virtualSubnet 虚拟子网（可选，FakeIP模式下忽略）
+     * @param subnetMask 子网掩码（可选，FakeIP模式下忽略）
      * @return true 成功，false 失败
      */
     bool start(const std::string& tunDeviceName = "", 
-               const std::string& virtualSubnet = "10.0.0.0",
-               const std::string& subnetMask = "255.255.255.0");
+               const std::string& virtualSubnet = "",
+               const std::string& subnetMask = "");
 
     /**
      * @brief 停止VPN桥接
@@ -64,7 +62,7 @@ public:
     std::string getTunDeviceName() const;
 
     /**
-     * @brief 获取路由表
+     * @brief 获取路由表 (Empty in FakeIP mode)
      */
     std::map<uint32_t, RouteEntry> getRoutingTable() const;
 
@@ -109,12 +107,10 @@ private:
                         CSteamID targetSteamID, bool reliable = true);
     void broadcastVpnMessage(VpnMessageType type, const uint8_t* payload, size_t payloadLength, 
                              bool reliable = true);
-    
-    // IP 协商成功回调
-    void onNegotiationSuccess(uint32_t ipAddress, const NodeID& nodeId);
-    
-    // 节点过期回调
-    void onNodeExpired(const NodeID& nodeId, uint32_t ipAddress);
+
+    // IP Query/Response
+    void sendIpQuery(CSteamID target = k_steamIDNil);
+    void sendIpResponse(CSteamID target);
 
     // Steam网络管理器
     SteamNetworkingManager* steamManager_;
@@ -128,22 +124,18 @@ private:
     // TUN读取线程
     std::unique_ptr<std::thread> tunReadThread_;
 
-    // 路由管理器
-    VpnRouteManager routeManager_;
-
     // IP地址池配置
-    uint32_t baseIP_;
-    uint32_t subnetMask_;
-    
     uint32_t localIP_;
+
+    // Routing Table: FakeIP -> SteamID
+    // Used to resolve destination SteamID when Steam's internal resolution fails
+    // or for optimization.
+    std::map<uint32_t, CSteamID> routingTable_;
+    mutable std::mutex routingMutex_;
 
     // 统计信息
     Statistics stats_;
     mutable std::mutex statsMutex_;
-    
-    // 分布式协议组件
-    IpNegotiator ipNegotiator_;
-    HeartbeatManager heartbeatManager_;
 };
 
 #endif // STEAM_VPN_BRIDGE_H
